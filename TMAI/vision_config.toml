@@ -1,0 +1,8 @@
+threshold = 125
+minLineLength = 50
+maxLineGap = 125
+thres1 = 50
+thres2 = 250
+apertureS = 3
+L2grad = true
+test_mode = false

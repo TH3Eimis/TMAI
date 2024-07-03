@@ -1,27 +1,24 @@
 # created using tutorial from https://antonin.cool/trackmania-ia-deeplearning-python-opencv-self-driving/
 # with modifications to fit the project
-
+import os
 import cv2
-import numpy as np
+import toml
 import pyautogui
+import numpy as np
 from queue import Queue
 from PIL import ImageGrab
-
 
 def get_window_corners():
     window_title = "TrackMania Nations Forever (TMInterface 2.1.4.testing)"
     window = pyautogui.getWindowsWithTitle(window_title)
-    
     if window:
         window = window[0]  
         window_x, window_y, window_width, window_height = window.left, window.top, window.width, window.height
-
         corners = {
                 "top_left": (window_x, window_y),
                 "top_right": (window_x + window_width, window_y),
                 "bottom_left": (window_x, window_y + window_height),
-                "bottom_right": (window_x + window_width, window_y + window_height)
-        }
+                "bottom_right": (window_x + window_width, window_y + window_height)}
         print(f"window width: {window_width}, window height: {window_height}")
         return corners, window_width, window_height
     
@@ -36,10 +33,15 @@ def findRoi(img,HEIGHT,WIDTH):
                          [WIDTH * 0.40, HEIGHT * 0.55], # 8
                          [WIDTH * 0.35, HEIGHT * 0.83], # 9
                          [0, HEIGHT * 0.83]], dtype=np.int32) # 10
+    clr_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    # cv2.imshow('clr_img', clr_img)
+    ROI_mask = np.zeros_like(clr_img)
+    ROI_polly = cv2.fillPoly(ROI_mask, [ROI_vertices], 255)
+    masked_img = cv2.bitwise_and(clr_img, ROI_mask)
+    cv2.imshow('ROI_mask', ROI_mask)
+    # cv2.imshow('masked_img', masked_img)
+    # cv2.imshow('ROI_polly', ROI_polly)
     
-    ROI_mask = np.zeros_like(img)
-    cv2.fillPoly(ROI_mask, [ROI_vertices], 255)
-    masked_img = cv2.bitwise_and(img, ROI_mask)
     return masked_img
 
 def average(lst):
@@ -155,28 +157,39 @@ def drawLanes(startleftx, endleftx, startlefty, endlefty, startrightx, endrightx
         cv2.line(lanes_img, (avgStartRightX, avgStartRightY), (avgEndRightX, avgEndRightY), (255, 0, 0), 2)
     return lanes_img
 
-def screen_record(data_queue):
-    threshold = 125
-    minLineLength = 50
-    maxLineGap = 125
-    thres1 = 50
-    thres2 = 250
-    apertureS = 3
-    L2grad = True
+def get_lanes(corners, window_width, window_height, vision_config):
+    top_left = list(corners["top_left"])
+    bottom_right = list(corners["bottom_right"])
+    threshold = vision_config.get("threshold", 50)
+    minLineLength = vision_config.get("minLineLength", 100)
+    maxLineGap = vision_config.get("maxLineGap", 10)
+    thres1 = vision_config.get("thres1", 50)
+    thres2 = vision_config.get("thres2", 150)
+    apertureS = vision_config.get("apertureS", 3)
+    L2grad = vision_config.get("L2grad", True)
+    #test_mode = vision_config.get("test_mode", False)
+
+    printscreen = np.array(ImageGrab.grab(bbox=(top_left[0], top_left[1], bottom_right[0], bottom_right[1])))
+    screen_colour = cv2.cvtColor(printscreen, cv2.COLOR_BGR2RGB)
+    ness_img = findRoi(screen_colour ,window_width ,window_height)
+    gauss_img = process_img(ness_img, thres1, thres2, apertureS, L2grad)
+    lines = draw_lines(gauss_img, threshold, minLineLength, maxLineGap)
+    slx,elx,sly,ely,srx,erx,sry,ery,slope = sortSlopes(lines, gauss_img)
+    lanes_img = drawLanes(slx,elx,sly,ely,srx,erx,sry,ery,gauss_img)
+    return lanes_img, slope
+
+
+def screen_record():
+    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vision_config.toml")
+    print(config_path)
+    with open(config_path, "r") as vcf:
+        vision_config = toml.load(vcf)
     corners, ww, wh = get_window_corners()
     if corners:
-        top_left = list(corners["top_left"])
-        bottom_right = list(corners["bottom_right"])
         while True:
-            printscreen = np.array(ImageGrab.grab(bbox=(top_left[0], top_left[1], bottom_right[0], bottom_right[1])))
-            gauss_img = process_img(printscreen, thres1, thres2, apertureS, L2grad)
-            ness_img = findRoi(gauss_img,wh,ww)
-            lines = draw_lines(ness_img, threshold, minLineLength, maxLineGap)
-            slx,elx,sly,ely,srx,erx,sry,ery,slope = sortSlopes(lines, ness_img)
-            lanes_img1 = drawLanes(slx,elx,sly,ely,srx,erx,sry,ery,ness_img)
-            data_queue.queue.clear()
-            # print(f"sending slope: {slope}")
-            data_queue.put(slope)
+            lanes_img, slope = get_lanes(corners, ww, wh, vision_config)
+            # data_queue.queue.clear()
+            # data_queue.put(slope)
             ######################################################################################
             # try:
             #     curv_img = overlay_curves_on_image(ness_img, fit_curve(sly + ely, slx + elx), fit_curve(sry + ery, srx + erx))
@@ -184,24 +197,18 @@ def screen_record(data_queue):
             # except:
             #     pass
             # print(f"slope is {slope}")
-            if cv2.waitKey(25) & 0xFF == ord('t'):
-                threshold = int(input("Enter threshold value: "))
-                minLineLength = int(input("Enter minimum line length: "))
-                maxLineGap = int(input("Enter maximum line gap: "))
-            cv2.imshow('window', lanes_img1)
+            # cv2.imshow('window', lanes_img)
             if cv2.waitKey(25) & 0xFF == ord('q'):
                 cv2.destroyAllWindows()
                 break
             if cv2.waitKey(25) & 0xFF == ord('r'):
-                corners = get_window_corners()
-                if corners:
-                    top_left = corners["top_left"]
-                    bottom_right = corners["bottom_right"]
-                else:
-                    print("Window not found.")
+                corners, ww, wh = get_window_corners()
     else:
         print("Window not found.")
 
-# if __name__ == "__main__":
-#     data_queue = Queue()
-#     screen_record(data_queue)
+if __name__ == "__main__":
+    while True:
+        if cv2.waitKey(25) & 0xFF == ord('q'):
+            cv2.destroyAllWindows()
+            break
+        screen_record()

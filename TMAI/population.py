@@ -2,7 +2,7 @@ import random
 import matplotlib.pyplot as plt
 from agent import Agent
 
-DEFAULT_POPULATION_SIZE = 5
+DEFAULT_POPULATION_SIZE = 3
 CROSS_GENE_CAP = 4
 CROSS_GENE_DECREASE = 2
 ELITISM_PERCENTAGE = 5

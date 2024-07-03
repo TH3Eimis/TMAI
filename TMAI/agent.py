@@ -161,13 +161,6 @@ class Agent:
                         print(f"large steer right: {steer}")
                         self.save_steer = steer
                         self.steer_mode = 1
-        # match slope:
-        #     case slope if 0.35 < slope < 0.8 : # slope on right steer left
-        #         left = 1
-        #         right = 0
-        #     case slope if -0.35 > slope > -0.8: # slope on left steer right
-        #         left = 0
-        #         right = 1
         return steer, accel, brake
 
     def run_process(self, state, prev_speed, challange=None, slope=0):
@@ -177,7 +170,7 @@ class Agent:
         brake = 0
         race_time = state.player_info.race_time
         if self.fitness.medal_times != {} and challange is not None:
-            self.getMapData(challange)
+            self.GetMapData(challange)
 
         if self.crashDetection(state, prev_speed):
             crash = True
