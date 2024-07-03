@@ -1,4 +1,4 @@
-Hi welcome to my project\\\
+Hi welcome to my project\
 
 do get started you will need to download\
 TrackMania Nations Forever (its free on steam)\
